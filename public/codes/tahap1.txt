@@ -1,0 +1,64 @@
+import pandas as pd
+import numpy as np
+import matplotlib.pyplot as plt
+
+# 1. Load Dataset
+jalur_kereta = pd.read_csv('jalur_kereta.csv')
+koordinat_tower = pd.read_csv('koordinat_tower.csv')
+
+# Fungsi Haversine untuk menghitung jarak geospasial (sebagai 'kedalaman' dalam DLS)
+def haversine(lat1, lon1, lat2, lon2):
+    R = 6371.0  # Radius Bumi dalam km
+    phi1, phi2 = np.radians(lat1), np.radians(lat2)
+    dphi = np.radians(lat2 - lat1)
+    dlambda = np.radians(lon2 - lon1)
+    a = np.sin(dphi / 2)**2 + np.cos(phi1) * np.cos(phi2) * np.sin(dlambda / 2)**2
+    return 2 * R * np.arcsin(np.sqrt(a))
+
+# 2. Inisialisasi Parameter DLS
+backbone_coords = jalur_kereta[['Latitude', 'Longitude']].values
+tower_coords = koordinat_tower[['lat', 'lon']].values
+depth_limit = 2.10  # Batas kedalaman pencarian dalam km
+
+results_tower_a = []
+
+# 3. Eksekusi Pencarian (Logika Depth-Limited Search)
+for i, t_coord in enumerate(tower_coords):
+    t_lat, t_lon = t_coord
+    # Hitung jarak ke setiap titik di backbone
+    distances = [haversine(t_lat, t_lon, b_lat, b_lon) for b_lat, b_lon in backbone_coords]
+    min_dist = min(distances)
+
+    # Filter berdasarkan Batas Kedalaman (Depth Limit)
+    if min_dist <= depth_limit:
+        nearest_idx = np.argmin(distances)
+        results_tower_a.append({
+            'tower_index': i,
+            'tower_latitude': t_lat,
+            'tower_longitude': t_lon,
+            'distance_km': min_dist,
+            'nearest_backbone_latitude': backbone_coords[nearest_idx][0],
+            'nearest_backbone_longitude': backbone_coords[nearest_idx][1]
+        })
+
+# Simpan hasil ke CSV
+tower_a_df = pd.DataFrame(results_tower_a)
+tower_a_df.to_csv('tower_A.csv', index=False)
+
+# 4. Visualisasi Hasil
+plt.figure(figsize=(12, 8))
+plt.plot(jalur_kereta['Longitude'], jalur_kereta['Latitude'], 'b-', label='Backbone (Rail)', alpha=0.5)
+plt.scatter(koordinat_tower['lon'], koordinat_tower['lat'], color='gray', s=30, label='Tower Lain', marker='o', alpha=0.5)
+
+# Plot Tower A dan Garis Fiber Optic
+for i, row in tower_a_df.iterrows():
+    plt.scatter(row['tower_longitude'], row['tower_latitude'], color='red', s=70, marker='o', alpha=0.5, label='tower A')
+    plt.plot([row['tower_longitude'], row['nearest_backbone_longitude']],
+             [row['tower_latitude'], row['nearest_backbone_latitude']],
+             'r-', linewidth=1, alpha=0.5)
+
+plt.title('Tahap 1: Hasil Klasifikasi Tower A (Depth Limit 2.10 km)')
+plt.legend(['Backbone', 'Tower Lain', 'Tower A', 'Fiberoptic'])
+plt.grid(True, linestyle='--', alpha=0.3)
+plt.savefig('visualisasi_tower_A.png')
+print(tower_a_df.head())

@@ -1,0 +1,31 @@
+import pandas as pd
+import numpy as np
+
+df = pd.read_csv('dataset_wilayah.csv')
+points = df[['latitude', 'longitude']].values
+
+def get_k_center(points, k):
+    centers = [points[0]]
+    for _ in range(1, k):
+        dists = np.array([min([np.linalg.norm(p - c) for c in centers]) for p in points])
+        next_center = points[np.argmax(dists)]
+        centers.append(next_center)
+    return np.array(centers)
+
+radius_limit = 0.0225
+
+k = 20
+while True:
+    centers = get_k_center(points, k)
+
+    max_dist = max([min([np.linalg.norm(p - c) for c in centers]) for p in points])
+
+    if max_dist <= radius_limit:
+        break
+    k += 1
+
+print(f"Jumlah Tower Optimal Coverage: {k}")
+print("Koordinat Tower:")
+print(centers)
+
+pd.DataFrame(centers, columns=['lat', 'lon']).to_csv('koordinat_tower.csv', index=False)

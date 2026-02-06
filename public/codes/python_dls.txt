@@ -1,0 +1,71 @@
+import pandas as pd
+import numpy as np
+import matplotlib.pyplot as plt
+
+# Memuat data
+df_towers = pd.read_csv('koordinat_tower.csv')
+df_rail = pd.read_csv('jalur_kereta.csv')
+df_wilayah = pd.read_csv('dataset_wilayah.csv')
+
+# Fungsi Haversine untuk jarak
+def haversine(lat1, lon1, lat2, lon2):
+    R = 6371
+    dlat = np.radians(lat2 - lat1)
+    dlon = np.radians(lon2 - lon1)
+    a = np.sin(dlat / 2)**2 + np.cos(np.radians(lat1)) * np.cos(np.radians(lat2)) * np.sin(dlon / 2)**2
+    c = 2 * np.arctan2(np.sqrt(a), np.sqrt(1 - a))
+    return R * c
+
+# Mencari titik terdekat di rel untuk setiap tower
+def find_min_dist_and_point(tower_lat, tower_lon, rail_df):
+    dists = [haversine(tower_lat, tower_lon, r_lat, r_lon) for r_lat, r_lon in zip(rail_df['Latitude'], rail_df['Longitude'])]
+    min_idx = np.argmin(dists)
+    return rail_df.iloc[min_idx]['Latitude'], rail_df.iloc[min_idx]['Longitude'], dists[min_idx]
+
+results = df_towers.apply(lambda row: find_min_dist_and_point(row['lat'], row['lon'], df_rail), axis=1)
+df_towers['rail_lat'] = [r[0] for r in results]
+df_towers['rail_lon'] = [r[1] for r in results]
+df_towers['dist_to_rail'] = [r[2] for r in results]
+
+# Klasifikasi berdasarkan Depth Limit 5km
+limit_km = 5.0
+df_towers['is_fiber'] = df_towers['dist_to_rail'] <= limit_km
+
+# Visualisasi
+plt.figure(figsize=(12, 8))
+
+# Plot Wilayah (Pemukiman)
+plt.scatter(df_wilayah['longitude'], df_wilayah['latitude'], c='lightgrey', alpha=0.3, s=5, label='Pemukiman')
+
+# Plot Jalur Kereta (Backbone)
+plt.plot(df_rail['Longitude'], df_rail['Latitude'], color='blue', linewidth=3, label='Backbone Jalur Kereta', alpha=0.7)
+
+# Plot Jalur Penarikan Kabel Fiber (Hijau)
+fiber_nodes = df_towers[df_towers['is_fiber']]
+for i, row in fiber_nodes.iterrows():
+    plt.plot([row['lon'], row['rail_lon']], [row['lat'], row['rail_lat']], 'g-', linewidth=1.5, alpha=0.6)
+
+# Plot Jalur Wireless Backhaul (Oranye)
+wireless_nodes = df_towers[~df_towers['is_fiber']]
+for i, row in wireless_nodes.iterrows():
+    # Cari node fiber terdekat sebagai jembatan
+    potential_bridges = fiber_nodes
+    dists_to_bridge = [haversine(row['lat'], row['lon'], b_lat, b_lon) for b_lat, b_lon in zip(potential_bridges['lat'], potential_bridges['lon'])]
+    min_bridge_idx = np.argmin(dists_to_bridge)
+    bridge = potential_bridges.iloc[min_bridge_idx]
+    plt.plot([row['lon'], bridge['lon']], [row['lat'], bridge['lat']], 'orange', linestyle='--', linewidth=1.2)
+
+# Marker
+plt.scatter(fiber_nodes['lon'], fiber_nodes['lat'], c='green', marker='^', s=100, label='Fiber Node (<5km dari Rel)')
+plt.scatter(wireless_nodes['lon'], wireless_nodes['lat'], c='orange', marker='^', s=100, label='Wireless Node (Backhaul)')
+
+plt.title('(DLS Depth Limit: 5 KM ke Jalur Kereta)')
+plt.xlabel('Longitude')
+plt.ylabel('Latitude')
+plt.legend(loc='upper left')
+plt.grid(True, alpha=0.2)
+plt.savefig('final_optimized_network.png')
+
+print(f"Total Tower: {len(df_towers)}")
+print(f"Tower Terjangkau Fiber: {len(fiber_nodes)}")
+print(f"Tower Wireless Backhaul: {len(wireless_nodes)}")

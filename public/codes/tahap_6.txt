@@ -1,0 +1,126 @@
+import pandas as pd
+import matplotlib.pyplot as plt
+from matplotlib.lines import Line2D
+
+# Muat hasil sebelumnya
+tower_a_df = pd.read_csv('tower_A.csv')
+tower_b_final_df = pd.read_csv('koneksi_tower_b_final.csv')
+tower_c_final_df = pd.read_csv('koneksi_tower_c.csv')
+jalur_kereta = pd.read_csv('jalur_kereta.csv')
+koordinat_tower = pd.read_csv('koordinat_tower.csv')
+
+final_segments = []
+
+# 1. Tower A to Backbone (Fiber Optic)
+for _, row in tower_a_df.iterrows():
+    final_segments.append({
+        'from_id': f"Tower {int(row['tower_index'])}",
+        'to_id': "Backbone",
+        'from_lat': row['tower_latitude'],
+        'from_lon': row['tower_longitude'],
+        'to_lat': row['nearest_backbone_latitude'],
+        'to_lon': row['nearest_backbone_longitude'],
+        'distance_km': row['distance_km'],
+        'media': 'Fiber Optic'
+    })
+
+# 2. Tower B Connections
+for _, row in tower_b_final_df.iterrows():
+    b_idx = int(row['tower_b_index'])
+    b_lat = koordinat_tower.iloc[b_idx]['lat']
+    b_lon = koordinat_tower.iloc[b_idx]['lon']
+
+    if row['connect_to'] == 'Tower A':
+        # B to A (Fiber Optic)
+        final_segments.append({
+            'from_id': f"Tower {b_idx}",
+            'to_id': f"Tower {int(row['target_index'])}",
+            'from_lat': b_lat,
+            'from_lon': b_lon,
+            'to_lat': row['target_lat'],
+            'to_lon': row['target_lon'],
+            'distance_km': row['segment_dist_km'],
+            'media': 'Fiber Optic'
+        })
+    else:
+        # B to Backbone (Fixed to Fiber Optic because Backbone is Fiber)
+        final_segments.append({
+            'from_id': f"Tower {b_idx}",
+            'to_id': "Backbone",
+            'from_lat': b_lat,
+            'from_lon': b_lon,
+            'to_lat': row['target_lat'],
+            'to_lon': row['target_lon'],
+            'distance_km': row['segment_dist_km'],
+            'media': 'Fiber Optic'
+        })
+
+# 3. Tower C and Remaining Towers
+for _, row in tower_c_final_df.iterrows():
+    if row['type'] == 'Tower C':
+        # C to B (Fiber Optic)
+        final_segments.append({
+            'from_id': f"Tower {int(row['tower_index'])} (C)",
+            'to_id': f"Tower {int(row['connect_to_index'])} (B)",
+            'from_lat': row['lat'],
+            'from_lon': row['lon'],
+            'to_lat': row['target_lat'],
+            'to_lon': row['target_lon'],
+            'distance_km': row['dist_km'],
+            'media': 'Fiber Optic'
+        })
+    else:
+        # Sisa to B or C (Wireless Backhaul)
+        final_segments.append({
+            'from_id': f"Tower {int(row['tower_index'])}",
+            'to_id': f"Tower {int(row['connect_to_index'])} ({row['connect_to_type'][-1]})",
+            'from_lat': row['lat'],
+            'from_lon': row['lon'],
+            'to_lat': row['target_lat'],
+            'to_lon': row['target_lon'],
+            'distance_km': row['dist_km'],
+            'media': 'Wireless Backhaul'
+        })
+
+master_df_fixed = pd.DataFrame(final_segments)
+master_df_fixed.to_csv('topology_jaringan_fiber.csv', index=False)
+
+# Visualisasi
+plt.figure(figsize=(18, 10))
+plt.plot(jalur_kereta['Longitude'], jalur_kereta['Latitude'], 'b-', label='Backbone (Rail)', alpha=0.5)
+
+# Plot segments
+for _, row in master_df_fixed.iterrows():
+    color = 'blue' if row['media'] == 'Fiber Optic' else 'red'
+    style = '-' if row['media'] == 'Fiber Optic' else '--'
+    linewidth = 1 if row['media'] == 'Fiber Optic' else 1.2
+
+    plt.plot([row['from_lon'], row['to_lon']], [row['from_lat'], row['to_lat']],
+             color=color, linestyle=style, linewidth=linewidth, alpha=0.7)
+
+# Scatter points
+plt.scatter(koordinat_tower['lon'], koordinat_tower['lat'], color='grey', s=60, alpha=0.3)
+plt.scatter(tower_a_df['tower_longitude'], tower_a_df['tower_latitude'], color='red', marker='o', s=80, label='Tower A')
+tower_b_indices = tower_b_final_df['tower_b_index'].astype(int).tolist()
+plt.scatter(koordinat_tower.iloc[tower_b_indices]['lon'], koordinat_tower.iloc[tower_b_indices]['lat'], color='orange', marker='o', s=80, label='Tower B')
+
+# Identifying Tower C
+tower_c_indices = tower_c_final_df[tower_c_final_df['type'] == 'Tower C']['tower_index'].astype(int).tolist()
+plt.scatter(koordinat_tower.iloc[tower_c_indices]['lon'], koordinat_tower.iloc[tower_c_indices]['lat'], color='cyan', marker='o', s=100, label='Tower C')
+
+# Labels and legend
+plt.title('topology jaringan proyek internet rakyat')
+custom_lines = [Line2D([0], [0], color='blue', lw=1, alpha=0.5),
+                Line2D([0], [0], color='red', lw=1, linestyle='--'),
+                Line2D([0], [0], marker='o', color='w', markerfacecolor='red', markersize=10),
+                Line2D([0], [0], marker='o', color='w', markerfacecolor='orange', markersize=10),
+                Line2D([0], [0], marker='o', color='w', markerfacecolor='cyan', markersize=10)]
+plt.legend(custom_lines, ['Fiber Optic', 'Wireless Backhaul', 'Tower A', 'Tower B', 'Tower C'])
+
+plt.xlabel('Longitude')
+plt.ylabel('Latitude')
+plt.grid(True, alpha=0.1)
+plt.savefig('topology_jaringan_fiberoptic_proyek_internet_rakyat.png')
+
+print("distribution of media:")
+print(master_df_fixed['media'].value_counts())

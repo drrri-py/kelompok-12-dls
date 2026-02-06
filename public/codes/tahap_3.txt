@@ -1,0 +1,124 @@
+import pandas as pd
+import numpy as np
+import matplotlib.pyplot as plt
+
+# muat datasets
+jalur_kereta = pd.read_csv('jalur_kereta.csv')
+koordinat_tower = pd.read_csv('koordinat_tower.csv')
+tower_a_df = pd.read_csv('tower_A.csv')
+tower_b_df = pd.read_csv('tower_B.csv')
+
+def haversine(lat1, lon1, lat2, lon2):
+    R = 6371.0
+    phi1, phi2 = np.radians(lat1), np.radians(lat2)
+    dphi = np.radians(lat2 - lat1)
+    dlambda = np.radians(lon2 - lon1)
+    a = np.sin(dphi / 2)**2 + np.cos(phi1) * np.cos(phi2) * np.sin(dlambda / 2)**2
+    return 2 * R * np.arcsin(np.sqrt(a))
+
+def intersect(p1, p2, p3, p4):
+    """Check if line segment p1p2 intersects p3p4."""
+    def ccw(A, B, C):
+        return (C[1]-A[1]) * (B[0]-A[0]) > (B[1]-A[1]) * (C[0]-A[0])
+    return ccw(p1,p3,p4) != ccw(p2,p3,p4) and ccw(p1,p2,p3) != ccw(p1,p2,p4)
+
+backbone_points = jalur_kereta[['Latitude', 'Longitude']].values
+backbone_segments = [(backbone_points[i], backbone_points[i+1]) for i in range(len(backbone_points)-1)]
+
+final_connections_b = []
+
+for idx_b, row_b in tower_b_df.iterrows():
+    b_pos = (row_b['tower_latitude'], row_b['tower_longitude'])
+
+    best_a = None
+    min_total_dist = float('inf')
+
+    # cek semua Tower A
+    for idx_a, row_a in tower_a_df.iterrows():
+        a_pos = (row_a['tower_latitude'], row_a['tower_longitude'])
+        dist_ba = haversine(b_pos[0], b_pos[1], a_pos[0], a_pos[1])
+        total_dist = dist_ba + row_a['distance_km'] # d(B,A) + d(A, backbone)
+
+        if total_dist < min_total_dist:
+            min_total_dist = total_dist
+            best_a = row_a
+            dist_ba_val = dist_ba
+
+    # kondisi 1: Total distance limit
+    meets_dist_limit = min_total_dist <= 6.0
+
+    # kondisi 2: jika B->A cross backbone?
+    crosses_backbone = False
+    if best_a is not None:
+        a_pos = (best_a['tower_latitude'], best_a['tower_longitude'])
+        for seg_start, seg_end in backbone_segments:
+            if intersect(b_pos, a_pos, seg_start, seg_end):
+                crosses_backbone = True
+                break
+
+    # Decision
+    if meets_dist_limit and not crosses_backbone:
+        # konek B ke A
+        final_connections_b.append({
+            'tower_b_index': row_b['tower_index'],
+            'connect_to': 'Tower A',
+            'target_index': best_a['tower_index'],
+            'target_lat': best_a['tower_latitude'],
+            'target_lon': best_a['tower_longitude'],
+            'segment_dist_km': dist_ba_val,
+            'total_path_to_bb_km': min_total_dist
+        })
+    else:
+        # Hubungkan B langsung ke Backbone (sudah dihitung pada langkah Tower B)
+        final_connections_b.append({
+            'tower_b_index': row_b['tower_index'],
+            'connect_to': 'Backbone',
+            'target_index': None,
+            'target_lat': row_b['nearest_backbone_latitude'],
+            'target_lon': row_b['nearest_backbone_longitude'],
+            'segment_dist_km': row_b['distance_km'],
+            'total_path_to_bb_km': row_b['distance_km']
+        })
+
+final_b_df = pd.DataFrame(final_connections_b)
+final_b_df.to_csv('koneksi_tower_b_final.csv', index=False)
+
+# Visualisasi
+plt.figure(figsize=(12, 8))
+plt.plot(jalur_kereta['Longitude'], jalur_kereta['Latitude'], 'b-', label='Backbone (Rail)', alpha=0.5)
+
+
+# Plot Menara A dan hubungannya dengan BB
+for i, row in tower_a_df.iterrows():
+    plt.scatter(row['tower_longitude'], row['tower_latitude'], color='red', marker='o', s=80, alpha=0.5, label='Tower A' if i==0 else "")
+    plt.plot([row['tower_longitude'], row['nearest_backbone_longitude']],
+             [row['tower_latitude'], row['nearest_backbone_latitude']], 'r-', alpha=0.5)
+
+# Plot Tower B dan koneksi barunya
+for i, row_b in tower_b_df.iterrows():
+    plt.scatter(row_b['tower_longitude'], row_b['tower_latitude'], color='orange', marker='o', s=80, alpha=0.5, label='Tower B' if i==0 else "")
+
+    # Get the connection decision
+    conn = final_b_df[final_b_df['tower_b_index'] == row_b['tower_index']].iloc[0]
+
+    if conn['connect_to'] == 'Tower A':
+        # Green line for B -> A
+        plt.plot([row_b['tower_longitude'], conn['target_lon']],
+                 [row_b['tower_latitude'], conn['target_lat']], 'y-', linewidth=1, alpha=0.5, label='B to A' if i==0 else "")
+    else:
+        # Yellow line for B -> Backbone
+        plt.plot([row_b['tower_longitude'], conn['target_lon']],
+                 [row_b['tower_latitude'], conn['target_lat']], 'y--', linewidth=1, alpha=0.5, label='B to Backbone' if i==0 else "")
+
+plt.title('Koneksi Tower B (Kriteria: A+B+Backbone <= 6km & Tidak Potong Backbone)')
+plt.xlabel('Longitude')
+plt.ylabel('Latitude')
+# Clean up legend
+handles, labels = plt.gca().get_legend_handles_labels()
+by_label = dict(zip(labels, handles))
+plt.legend(by_label.values(), by_label.keys())
+
+plt.grid(True, alpha=0.3)
+plt.savefig('koneksi_tower_A+B.png')
+
+print(final_b_df)

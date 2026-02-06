@@ -1,0 +1,11 @@
+FUNCTION DLS(node, target, limit)
+    IF node == target THEN
+        RETURN node
+    
+    IF limit > 0 THEN
+        FOR EACH neighbor IN get_neighbors(node) DO
+            result = DLS(neighbor, target, limit - 1)
+            IF result != null THEN 
+                RETURN result
+                
+    RETURN null

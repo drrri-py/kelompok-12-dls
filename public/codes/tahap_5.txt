@@ -1,0 +1,119 @@
+import pandas as pd
+import numpy as np
+import matplotlib.pyplot as plt
+
+# Memuat data yang ada
+tower_b_df = pd.read_csv('tower_B.csv')
+tower_sisa_df = pd.read_csv('tower_sisa.csv')
+jalur_kereta = pd.read_csv('jalur_kereta.csv')
+tower_a_df = pd.read_csv('tower_A.csv')
+
+def haversine(lat1, lon1, lat2, lon2):
+    R = 6371.0
+    phi1, phi2 = np.radians(lat1), np.radians(lat2)
+    dphi = np.radians(lat2 - lat1)
+    dlambda = np.radians(lon2 - lon1)
+    a = np.sin(dphi / 2)**2 + np.cos(phi1) * np.cos(phi2) * np.sin(dlambda / 2)**2
+    return 2 * R * np.arcsin(np.sqrt(a))
+
+# cari Tower B dengan > 3 connections
+counts = tower_sisa_df['connect_to_tower_b_index'].value_counts()
+towers_b_to_split = counts[counts > 3].index.tolist()
+
+new_connections = []
+tower_c_list = []
+
+for b_idx in towers_b_to_split:
+    # Get group of sisa towers connected to this B
+    group = tower_sisa_df[tower_sisa_df['connect_to_tower_b_index'] == b_idx].copy()
+
+    # Menara dengan jarak minimum ke B menjadi Menara C
+    tower_c_row = group.loc[group['distance_km'].idxmin()]
+    c_idx = int(tower_c_row['tower_index'])
+    c_lat, c_lon = tower_c_row['tower_latitude'], tower_c_row['tower_longitude']
+
+    tower_c_list.append({
+        'tower_index': c_idx,
+        'lat': c_lat,
+        'lon': c_lon,
+        'parent_b_index': b_idx
+    })
+
+    # Update connections for the rest of the group
+    for _, row in group.iterrows():
+        s_idx = int(row['tower_index'])
+        if s_idx == c_idx:
+            # Tower C stays connected to Tower B
+            new_connections.append({
+                'tower_index': s_idx,
+                'type': 'Tower C',
+                'lat': row['tower_latitude'],
+                'lon': row['tower_longitude'],
+                'connect_to_index': b_idx,
+                'connect_to_type': 'Tower B',
+                'target_lat': row['target_b_latitude'],
+                'target_lon': row['target_b_longitude'],
+                'dist_km': row['distance_km']
+            })
+        else:
+            # Connect to Tower C
+            dist_to_c = haversine(row['tower_latitude'], row['tower_longitude'], c_lat, c_lon)
+            new_connections.append({
+                'tower_index': s_idx,
+                'type': 'Tower Sisa',
+                'lat': row['tower_latitude'],
+                'lon': row['tower_longitude'],
+                'connect_to_index': c_idx,
+                'connect_to_type': 'Tower C',
+                'target_lat': c_lat,
+                'target_lon': c_lon,
+                'dist_km': dist_to_c
+            })
+
+# Tambahkan tower yang tidak perlu dipisahkan
+remaining_towers_normal = tower_sisa_df[~tower_sisa_df['connect_to_tower_b_index'].isin(towers_b_to_split)]
+for _, row in remaining_towers_normal.iterrows():
+    new_connections.append({
+        'tower_index': int(row['tower_index']),
+        'type': 'Tower Sisa',
+        'lat': row['tower_latitude'],
+        'lon': row['tower_longitude'],
+        'connect_to_index': int(row['connect_to_tower_b_index']),
+        'connect_to_type': 'Tower B',
+        'target_lat': row['target_b_latitude'],
+        'target_lon': row['target_b_longitude'],
+        'dist_km': row['distance_km']
+    })
+
+final_connections_df = pd.DataFrame(new_connections)
+final_connections_df.to_csv('koneksi_tower_c.csv', index=False)
+
+# Visualisasi
+plt.figure(figsize=(12, 8))
+plt.plot(jalur_kereta['Longitude'], jalur_kereta['Latitude'], 'b-', label='Backbone (Rail)', alpha=0.5)
+
+# A & B for context
+plt.scatter(tower_a_df['tower_longitude'], tower_a_df['tower_latitude'], color='red', marker='o', s=40, alpha=0.5, label='Tower A')
+plt.scatter(tower_b_df['tower_longitude'], tower_b_df['tower_latitude'], color='orange', marker='o', s=60, alpha=0.5, label='Tower B')
+
+# Plot final connections
+for _, row in final_connections_df.iterrows():
+    if row['type'] == 'Tower C':
+        plt.scatter(row['lon'], row['lat'], color='cyan', marker='o', s=80, label='Tower C' if 'Tower C' not in plt.gca().get_legend_handles_labels()[1] else "")
+        plt.plot([row['lon'], row['target_lon']], [row['lat'], row['target_lat']], 'c-', linewidth=1)
+    else:
+        plt.scatter(row['lon'], row['lat'], color='purple', marker='o', s=40, alpha=0.5)
+        color = 'm--' if row['connect_to_type'] == 'Tower C' else 'p:'
+        plt.plot([row['lon'], row['target_lon']], [row['lat'], row['target_lat']], color, alpha=0.5)
+
+
+plt.title('Koneksi dengan Penambahan Tower C (Optimasi Hub)')
+plt.legend()
+plt.grid(True, alpha=0.2)
+plt.savefig('visualisasi_tower_c.png')
+
+print("Tower B with > 3 connections:", towers_b_to_split)
+print("New Tower C positions:")
+print(pd.DataFrame(tower_c_list))
+print("\nFinal Connections Sample:")
+print(final_connections_df.head(10))

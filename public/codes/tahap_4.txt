@@ -1,0 +1,88 @@
+import pandas as pd
+import numpy as np
+import matplotlib.pyplot as plt
+
+# muat datasets
+jalur_kereta = pd.read_csv('jalur_kereta.csv')
+koordinat_tower = pd.read_csv('koordinat_tower.csv')
+tower_a_df = pd.read_csv('tower_A.csv')
+tower_b_df = pd.read_csv('tower_B.csv')
+
+def haversine(lat1, lon1, lat2, lon2):
+    R = 6371.0
+    phi1, phi2 = np.radians(lat1), np.radians(lat2)
+    dphi = np.radians(lat2 - lat1)
+    dlambda = np.radians(lon2 - lon1)
+    a = np.sin(dphi / 2)**2 + np.cos(phi1) * np.cos(phi2) * np.sin(dlambda / 2)**2
+    return 2 * R * np.arcsin(np.sqrt(a))
+
+# Mengidentifikasi indeks yang diproses
+indices_a = set(tower_a_df['tower_index'].astype(int))
+indices_b = set(tower_b_df['tower_index'].astype(int))
+all_indices = set(range(len(koordinat_tower)))
+remaining_indices = all_indices - indices_a - indices_b
+
+# Siapkan daftar koordinat untuk Menara B
+tower_b_coords = tower_b_df[['tower_index', 'tower_latitude', 'tower_longitude']].values
+
+results_remaining = []
+
+for idx_r in sorted(list(remaining_indices)):
+    r_row = koordinat_tower.iloc[idx_r]
+    r_lat, r_lon = r_row['lat'], r_row['lon']
+
+    min_dist = float('inf')
+    best_b_idx = -1
+    best_b_lat = 0
+    best_b_lon = 0
+
+    # cari nearest Tower B
+    for b_idx, b_lat, b_lon in tower_b_coords:
+        dist = haversine(r_lat, r_lon, b_lat, b_lon)
+        if dist < min_dist:
+            min_dist = dist
+            best_b_idx = int(b_idx)
+            best_b_lat = b_lat
+            best_b_lon = b_lon
+
+    results_remaining.append({
+        'tower_index': idx_r,
+        'tower_latitude': r_lat,
+        'tower_longitude': r_lon,
+        'connect_to_tower_b_index': best_b_idx,
+        'target_b_latitude': best_b_lat,
+        'target_b_longitude': best_b_lon,
+        'distance_km': min_dist
+    })
+
+remaining_df = pd.DataFrame(results_remaining)
+remaining_df.to_csv('tower_sisa.csv', index=False)
+
+# Visualisasi
+plt.figure(figsize=(12, 8))
+plt.plot(jalur_kereta['Longitude'], jalur_kereta['Latitude'], 'b-', label='Backbone (Rail)', alpha=0.5)
+
+
+# Plot Tower A (static reference)
+plt.scatter(tower_a_df['tower_longitude'], tower_a_df['tower_latitude'], color='red', marker='o', s=40, alpha=0.5, label='Tower A')
+
+# Plot Tower B (static reference)
+plt.scatter(tower_b_df['tower_longitude'], tower_b_df['tower_latitude'], color='orange', marker='o', s=60, alpha=0.5, label='Tower B')
+
+# Plot Remaining Towers and connections
+plt.scatter(remaining_df['tower_longitude'], remaining_df['tower_latitude'], color='purple', marker='o', alpha=0.5, s=80, label='Tower Sisa',)
+
+for i, row in remaining_df.iterrows():
+    plt.plot([row['tower_longitude'], row['target_b_longitude']],
+             [row['tower_latitude'], row['target_b_latitude']],
+             'm--', linewidth=1, alpha=0.5)
+
+plt.title('Koneksi Tower Sisa ke Tower B Terdekat')
+plt.xlabel('Longitude')
+plt.ylabel('Latitude')
+plt.legend()
+plt.grid(True, alpha=0.2)
+plt.savefig('visualisasi_tower_sisa.png')
+
+print(f"Total remaining towers: {len(remaining_df)}")
+print(remaining_df[['tower_index', 'connect_to_tower_b_index', 'distance_km']])

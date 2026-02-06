@@ -1,0 +1,41 @@
+1. Pengecekan Target (Goal Test)
+    IF node == target THEN
+        RETURN node
+
+- Logikanya Hal pertama yang dilakukan algoritma saat sampai di sebuah titik (node) adalah bertanya: "Apakah ini barang yang saya cari?".
+
+- Jika IYA, pencarian selesai dan kita pulang membawa hasilnya.
+
+
+
+2. Pengecekan Batas (Limit Check)
+    IF limit > 0 THEN
+
+- Logikanya Ini adalah "pagar"nya. Sebelum melangkah lebih dalam ke anak-anak (cabang) dari node saat ini, algoritma bertanya: "Apakah jatah kedalaman saya masih ada?".
+
+- Jika limit sudah 0, algoritma akan mengabaikan perintah di bawahnya dan langsung melompat ke bagian paling akhir (RETURN null). Inilah yang mencegah pencarian masuk terlalu dalam.
+
+
+
+3. Penelusuran Tetangga/Anak (Recursive Step)
+    FOR EACH neighbor IN get_neighbors(node) DO
+        result = DLS(neighbor, target, limit - 1)
+
+- Logikanya Jika belum ketemu dan limit masih ada, kita cek semua tetangga/anak dari node tersebut satu per satu.
+
+- Kenapa limit - 1? Karena ketika kita turun satu tingkat ke anak, jatah kedalaman kita berkurang satu. Jika awalnya boleh menjelajah 3 lantai, setelah masuk ke lantai 1, sisa jatah kita tinggal 2 lantai lagi.
+
+
+
+4. Pengiriman Hasil (Result Handling)
+    IF result != null THEN
+        RETURN result
+
+- Logikanya Jika pencarian di tingkat yang lebih dalam tadi berhasil menemukan target (result bukan kosong), maka hasil itu terus dikirim ke atas (ke pemanggilnya) sampai keluar sebagai hasil akhir.
+
+
+
+5. Jalan Buntu (Failure)
+    RETURN null
+
+- Logikanya Jika semua anak sudah diperiksa dan tidak ada yang menemukan target, atau jika limit sudah habis tapi target belum ketemu, algoritma akan menyerah di jalur tersebut dan mengembalikan null (kosong).
