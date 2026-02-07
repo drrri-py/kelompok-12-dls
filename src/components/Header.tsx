@@ -14,7 +14,7 @@ const Header: React.FC = () => {
           kelompok 12
         </h2>
         <p className="mt-4 max-w-xs leading-normal">
-          studi kasus efisiensi fiberoptic pada proyek internet rakyat.
+          simulasi penerapan algoritma DLS pada proyek internet rakyat.
         </p>
         <Navigation />
       </div>
